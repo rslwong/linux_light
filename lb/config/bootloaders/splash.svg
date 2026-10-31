@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16202a"/>
+      <stop offset="1" stop-color="#0b0f14"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="600" fill="url(#bg)"/>
+  <rect x="80" y="236" width="640" height="2" fill="#005577"/>
+  <text x="400" y="170" text-anchor="middle" font-family="DejaVu Sans" font-size="54" font-weight="bold" fill="#eeeeee">Linux Light</text>
+  <text x="400" y="214" text-anchor="middle" font-family="DejaVu Sans" font-size="18" fill="#8fa6b8">Debian @VERSION@ · dwm · portable live system</text>
+</svg>

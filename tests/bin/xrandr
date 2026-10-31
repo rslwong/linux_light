@@ -1,0 +1,85 @@
+#!/usr/bin/python3
+"""Fake xrandr for tests/test-display.py, backed by $FAKE_XRANDR (JSON).
+
+Prints `xrandr --verbose --current` in the real format and applies
+--output/--mode/--pos/--rotate/--primary/--off like the real tool.
+"""
+import json, os, sys
+
+STATE = os.environ["FAKE_XRANDR"]
+st = json.load(open(STATE))
+args = sys.argv[1:]
+
+if args == ["--query"]:
+    sys.exit(0)
+
+if args == ["--verbose", "--current"]:
+    act = [o for o in st["outputs"] if o["geometry"]]
+    W = max([o["geometry"][0] + o["geometry"][2] for o in act] or [320])
+    H = max([o["geometry"][1] + o["geometry"][3] for o in act] or [200])
+    print(f"Screen 0: minimum 320 x 200, current {W} x {H}, maximum 16384 x 16384")
+    for o in st["outputs"]:
+        head = f'{o["name"]} {"connected" if o["connected"] else "disconnected"}'
+        if o.get("primary"):
+            head += " primary"
+        if o["geometry"]:
+            w, h, x, y = o["geometry"]
+            head += f" {w}x{h}+{x}+{y} (0x4{len(o['name'])}) {o.get('rotation', 'normal')}"
+        print(head + " (normal left inverted right x axis y axis) 309mm x 174mm")
+        print("\tIdentifier: 0x42\n\tTimestamp:  1234")
+        if o["connected"] and o.get("edid"):
+            print("\tEDID: ")
+            e = (o["edid"] * 64)[:256]
+            for i in range(0, 256, 32):
+                print("\t\t" + e[i:i + 32])
+        print("\tBroadcast RGB: Automatic\n\t\tsupported: Automatic, Full, Limited 16:235")
+        if o["connected"]:
+            for i, (w, h) in enumerate(o["modes"]):
+                flags = ""
+                if o["geometry"] and o.get("mode") == [w, h]:
+                    flags += " *current"
+                if [w, h] == o.get("preferred"):
+                    flags += " +preferred"
+                print(f"  {w}x{h} (0x{50 + i:x}) 148.500MHz +HSync +VSync{flags}")
+                print(f"        h: width  {w} start 2008 end 2052 total 2200 skew    0 clock  67.50KHz")
+                print(f"        v: height {h} start 1084 end 1089 total 1125           clock  60.00Hz")
+    sys.exit(0)
+
+st.setdefault("calls", []).append(args)
+by = {o["name"]: o for o in st["outputs"]}
+i, cur = 0, None
+while i < len(args):
+    a = args[i]
+    if a == "--output":
+        cur = by.get(args[i + 1])
+        if cur is None:
+            sys.exit(f"warning: output {args[i + 1]} not found")
+        cur["_set"] = {}
+        i += 2
+    elif a in ("--mode", "--pos", "--rotate"):
+        cur["_set"][a] = args[i + 1]
+        i += 2
+    elif a in ("--primary", "--off"):
+        cur["_set"][a] = True
+        i += 1
+    else:
+        sys.exit(f"fake xrandr: unsupported {a}")
+for o in st["outputs"]:
+    s = o.pop("_set", None)
+    if s is None:
+        continue
+    if s.get("--off"):
+        o["geometry"], o["mode"], o["primary"] = None, None, False
+        continue
+    w, h = map(int, s["--mode"].split("x"))
+    if not o["connected"] or [w, h] not in o["modes"]:
+        sys.exit(f"xrandr: cannot find mode {s['--mode']} for {o['name']}")
+    x, y = map(int, s.get("--pos", "0x0").split("x"))
+    rot = s.get("--rotate", "normal")
+    o["mode"], o["rotation"] = [w, h], rot
+    o["geometry"] = [h, w, x, y] if rot in ("left", "right") else [w, h, x, y]
+    if s.get("--primary"):
+        for p in st["outputs"]:
+            p["primary"] = False
+        o["primary"] = True
+json.dump(st, open(STATE, "w"))

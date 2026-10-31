@@ -1,0 +1,47 @@
+#!/bin/sh
+# Feeds dwm's status bar: network, volume, battery, clock.
+# SIGUSR1 refreshes it immediately (sent by linux-light-volume).
+# Exits when the X server goes away.
+
+echo $$ > "${XDG_RUNTIME_DIR:-/tmp}/linux-light-status.pid"
+
+network() {
+	nmcli -t -f TYPE,STATE,CONNECTION device 2>/dev/null | awk -F: '
+		$2 == "connected" && ($1 == "wifi" || $1 == "ethernet") {
+			print ($1 == "wifi" ? "wifi " : "wired ") $3; found = 1; exit
+		}
+		END { if (!found) print "offline" }'
+}
+
+volume() {
+	# "Volume: 0.45" or "Volume: 0.45 [MUTED]"
+	wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '
+		/MUTED/ { print "vol muted"; exit }
+		{ printf "vol %d%%\n", $2 * 100 + 0.5 }'
+}
+
+battery() {
+	for bat in /sys/class/power_supply/BAT*; do
+		[ -r "$bat/capacity" ] || continue
+		case "$(cat "$bat/status")" in
+			Charging) sign="+" ;;
+			Discharging) sign="-" ;;
+			*) sign="" ;;
+		esac
+		echo "bat $(cat "$bat/capacity")%$sign"
+		return
+	done
+}
+
+trap 'kill "$sleeper" 2>/dev/null' USR1
+
+while :; do
+	status="$(network) | $(volume) |"
+	bat="$(battery)"
+	[ -n "$bat" ] && status="$status $bat |"
+	xsetroot -name " $status $(date '+%a %d %b %H:%M') " || exit 0
+
+	sleep 5 &
+	sleeper=$!
+	wait "$sleeper"
+done

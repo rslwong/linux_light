@@ -1,0 +1,180 @@
+#!/bin/bash
+# Touchpad settings (Super+Shift+t).
+#
+#   linux-light-touchpad           text menu; opens a terminal if needed
+#   linux-light-touchpad --apply   apply the saved settings (run at login)
+#
+# Settings are kept in ~/.config/linux-light/touchpad and applied with xinput
+# to every touchpad. The defaults that apply before login are in
+# /etc/X11/xorg.conf.d/40-linux-light-touchpad.conf.
+
+CONF="${XDG_CONFIG_HOME:-$HOME/.config}/linux-light/touchpad"
+TITLE="Touchpad settings"
+
+SPEEDS=(-1.0 -0.75 -0.5 -0.25 0 0.25 0.5 0.75 1.0)
+SPEED_NAMES=("slowest" "" "slower" "" "default" "" "faster" "" "fastest")
+
+defaults() {
+	TAP=1        # tap to click
+	TAP_RIGHT=1  # two-finger tap = right click (otherwise middle click)
+	DRAG3=3      # fingers for macOS-style dragging: 0 (off), 3 or 4
+	SPEED=0      # pointer speed, -1.0 (slowest) to 1.0 (fastest)
+	NATURAL=0    # natural (macOS-style, reversed) scrolling
+	DWT=1        # ignore the touchpad while typing
+}
+
+load() {
+	local key value
+	defaults
+	[ -r "$CONF" ] || return 0
+	while IFS='=' read -r key value; do
+		case "$key=$value" in
+			TAP=[01]|TAP_RIGHT=[01]|NATURAL=[01]|DWT=[01]|DRAG3=[034])
+				printf -v "$key" '%s' "$value" ;;
+			SPEED=*)
+				[[ $value =~ ^-?(0(\.[0-9]+)?|1(\.0+)?)$ ]] && SPEED=$value ;;
+		esac
+	done < "$CONF"
+}
+
+save() {
+	mkdir -p "${CONF%/*}"
+	printf 'TAP=%s\nTAP_RIGHT=%s\nDRAG3=%s\nSPEED=%s\nNATURAL=%s\nDWT=%s\n' \
+		"$TAP" "$TAP_RIGHT" "$DRAG3" "$SPEED" "$NATURAL" "$DWT" > "$CONF"
+}
+
+# xinput ids of all touchpads (the devices that support tapping)
+touchpads() {
+	local id
+	[ -n "$DISPLAY" ] || return 0
+	for id in $(xinput list --id-only 2>/dev/null); do
+		xinput list-props "$id" 2>/dev/null | grep -q 'libinput Tapping Enabled (' && echo "$id"
+	done
+}
+
+apply() {
+	local id map
+	if [ "$TAP_RIGHT" = 1 ]; then map="1 0"; else map="0 1"; fi   # lrm / lmr
+	for id in $(touchpads); do
+		xinput set-prop "$id" "libinput Tapping Enabled" "$TAP"
+		xinput set-prop "$id" "libinput Tapping Button Mapping Enabled" $map
+		xinput set-prop "$id" "libinput Accel Speed" "$SPEED"
+		xinput set-prop "$id" "libinput Natural Scrolling Enabled" "$NATURAL"
+		xinput set-prop "$id" "libinput Disable While Typing Enabled" "$DWT"
+		xinput set-prop "$id" "libinput 3-Finger Drag Enabled" "$DRAG3"
+	done 2>/dev/null
+}
+
+onoff() {
+	if [ "$1" = 1 ]; then echo "on"; else echo "off"; fi
+}
+
+drag_text() {
+	if [ "$DRAG3" = 0 ]; then echo "off"; else echo "$DRAG3 fingers"; fi
+}
+
+speed_text() {
+	local i
+	for i in "${!SPEEDS[@]}"; do
+		if [ "${SPEEDS[$i]}" = "$SPEED" ] && [ -n "${SPEED_NAMES[$i]}" ]; then
+			echo "$SPEED, ${SPEED_NAMES[$i]}"
+			return
+		fi
+	done
+	echo "$SPEED"
+}
+
+# The touchpads found, for the top of the menu
+status() {
+	local id found="" drag=0
+	if [ -z "$DISPLAY" ]; then
+		echo "Not running in the graphical session: settings are saved and applied at the next login."
+		return
+	fi
+	for id in $(touchpads); do
+		found="$found\n  $(xinput list --name-only "$id")"
+		xinput list-props "$id" | grep -q 'libinput 3-Finger Drag Enabled (' && drag=1
+	done
+	if [ -z "$found" ]; then
+		echo "No touchpad found. Settings are saved and used when one is present."
+	elif [ "$drag" = 0 ]; then
+		echo "Touchpad:$found\n(3-finger drag is not supported by this touchpad.)"
+	else
+		echo "Touchpad:$found"
+	fi
+}
+
+current() {
+	if [ "$1" = "$2" ]; then echo "   (current)"; fi
+}
+
+choose_drag() {
+	local choice
+	choice=$(whiptail --title "$TITLE" --notags --default-item "$DRAG3" --menu \
+		"Drag with several fingers, like on macOS: put the fingers on a window title, a file or text and move them. Lift them and put them down again within a moment to continue the same drag." \
+		15 72 3 \
+		0 "Off$(current 0 "$DRAG3")" \
+		3 "Three fingers$(current 3 "$DRAG3")" \
+		4 "Four fingers$(current 4 "$DRAG3")" \
+		3>&1 1>&2 2>&3) && DRAG3=$choice
+}
+
+choose_speed() {
+	local i choice selected=4 items=()
+	for i in "${!SPEEDS[@]}"; do
+		# Padded so no entry starts with "-", which whiptail would take as an option.
+		items+=("$i" "$(printf '%6s  %s' "${SPEEDS[$i]}" "${SPEED_NAMES[$i]}")$(current "${SPEEDS[$i]}" "$SPEED")")
+		if [ "${SPEEDS[$i]}" = "$SPEED" ]; then selected=$i; fi
+	done
+	choice=$(whiptail --title "$TITLE" --notags --default-item "$selected" --menu \
+		"How fast the pointer moves when you move your finger." \
+		18 50 9 "${items[@]}" 3>&1 1>&2 2>&3) && SPEED=${SPEEDS[$choice]}
+}
+
+menu() {
+	local choice=tap
+	while true; do
+		choice=$(whiptail --title "$TITLE" --backtitle "Linux Light" --notags \
+			--ok-button "Change" --cancel-button "Done" --default-item "$choice" \
+			--menu "$(status)\n\nChanges apply immediately and are kept for the next login." \
+			20 72 7 \
+			tap     "Tap to click                       $(onoff "$TAP")" \
+			right   "Two-finger tap = right click       $(onoff "$TAP_RIGHT")" \
+			drag    "Three-finger drag (like macOS)     $(drag_text)" \
+			speed   "Pointer speed                      $(speed_text)" \
+			natural "Natural scrolling (like macOS)     $(onoff "$NATURAL")" \
+			dwt     "Ignore touchpad while typing       $(onoff "$DWT")" \
+			reset   "Reset to defaults" \
+			3>&1 1>&2 2>&3) || break
+		case "$choice" in
+			tap) TAP=$((1 - TAP)) ;;
+			right) TAP_RIGHT=$((1 - TAP_RIGHT)) ;;
+			drag) choose_drag ;;
+			speed) choose_speed ;;
+			natural) NATURAL=$((1 - NATURAL)) ;;
+			dwt) DWT=$((1 - DWT)) ;;
+			reset) defaults ;;
+		esac
+		save
+		apply
+	done
+}
+
+load
+case "$1" in
+	--apply)
+		apply
+		;;
+	"")
+		# Started from dwm or dmenu, stdin is the console X runs on (or
+		# nothing), so open a terminal window unless already inside one.
+		if [ -n "$DISPLAY" ] && [[ "$(tty)" != /dev/pts/* ]]; then
+			exec x-terminal-emulator -T "$TITLE" -e "$0"
+		fi
+		menu
+		;;
+	*)
+		echo "usage: $0 [--apply]" >&2
+		exit 1
+		;;
+esac

@@ -1,0 +1,265 @@
+Description: Add a ThreeFingerDrag option and "libinput 3-Finger Drag Enabled" property
+ libinput 1.27 can drag with three (or four) fingers like macOS, but the X
+ driver offers no way to enable it. Expose it like the tapping options.
+Author: Linux Light
+Forwarded: no
+---
+diff -ruN a/include/libinput-properties.h b/include/libinput-properties.h
+--- a/include/libinput-properties.h	2024-10-14 21:08:03.000000000 -0700
++++ b/include/libinput-properties.h	2026-10-30 10:43:20.447277848 -0700
+@@ -44,6 +44,13 @@
+ /* Tap drag lock default enabled/disabled: BOOL, 1 value, read-only */
+ #define LIBINPUT_PROP_TAP_DRAG_LOCK_DEFAULT "libinput Tapping Drag Lock Enabled Default"
+ 
++/* 3-finger drag: BOOL-sized, 1 value: number of fingers that drag
++ * (0 = disabled, 3 or 4) */
++#define LIBINPUT_PROP_3FG_DRAG "libinput 3-Finger Drag Enabled"
++
++/* 3-finger drag default: BOOL-sized, 1 value, read-only */
++#define LIBINPUT_PROP_3FG_DRAG_DEFAULT "libinput 3-Finger Drag Enabled Default"
++
+ /* Tap button order: BOOL, 2 values in order LRM, LMR, only one may be set
+    at any time */
+ #define LIBINPUT_PROP_TAP_BUTTONMAP "libinput Tapping Button Mapping Enabled"
+diff -ruN a/man/libinput.man b/man/libinput.man
+--- a/man/libinput.man	2024-10-14 21:08:03.000000000 -0700
++++ b/man/libinput.man	2026-10-30 10:43:33.675398904 -0700
+@@ -246,6 +246,13 @@
+ finger up during tap-and-drag will not immediately release the button. If
+ the finger is set down again within the timeout, the dragging process
+ continues.
++.TP 7
++.BI "Option \*qThreeFingerDrag\*q \*q" string \*q
++Enables 3-finger dragging on touchpads: moving three fingers on the touchpad
++moves the pointer with the left button held down, like on macOS. Lifting the
++fingers releases the button after a short timeout, so the drag can be
++continued by putting the fingers down again. Valid values are "off", "3"
++(or "on") and "4" (drag with four fingers instead).
+ .PP
+ For all options, the options are only parsed if the device supports that
+ configuration option. For all options, the default value is the one used by
+@@ -391,6 +398,10 @@
+ .BI "libinput Tapping Drag Lock Enabled"
+ 1 boolean value (8 bit, 0 or 1). 1 enables drag lock during tapping
+ .TP 7
++.BI "libinput 3-Finger Drag Enabled"
++1 8-bit value: the number of fingers that drag (3 or 4), or 0 if 3-finger
++dragging is disabled.
++.TP 7
+ .BI "libinput Disable While Typing Enabled"
+ 1 boolean value (8 bit, 0 or 1). Indicates if disable while typing is
+ enabled or disabled.
+diff -ruN a/src/xf86libinput.c b/src/xf86libinput.c
+--- a/src/xf86libinput.c	2024-10-14 21:08:03.000000000 -0700
++++ b/src/xf86libinput.c	2026-10-30 10:43:20.447277848 -0700
+@@ -167,6 +167,7 @@
+ 		BOOL tap_drag;
+ 		BOOL tap_drag_lock;
+ 		enum libinput_config_tap_button_map tap_button_map;
++		enum libinput_config_3fg_drag_state drag_3fg;
+ 		BOOL natural_scrolling;
+ 		BOOL left_handed;
+ 		BOOL middle_emulation;
+@@ -683,6 +684,26 @@
+ 	}
+ }
+ 
++static inline CARD8
++drag_3fg_to_fingers(enum libinput_config_3fg_drag_state state)
++{
++	switch (state) {
++	case LIBINPUT_CONFIG_3FG_DRAG_ENABLED_3FG: return 3;
++	case LIBINPUT_CONFIG_3FG_DRAG_ENABLED_4FG: return 4;
++	default: return 0;
++	}
++}
++
++static inline enum libinput_config_3fg_drag_state
++fingers_to_drag_3fg(CARD8 fingers)
++{
++	switch (fingers) {
++	case 3: return LIBINPUT_CONFIG_3FG_DRAG_ENABLED_3FG;
++	case 4: return LIBINPUT_CONFIG_3FG_DRAG_ENABLED_4FG;
++	default: return LIBINPUT_CONFIG_3FG_DRAG_DISABLED;
++	}
++}
++
+ static inline void
+ LibinputApplyConfigTap(DeviceIntPtr dev,
+ 		       struct xf86libinput *driver_data,
+@@ -728,6 +749,13 @@
+ 		xf86IDrvMsg(pInfo, X_ERROR,
+ 			    "Failed to set Tapping Drag to %d\n",
+ 			    driver_data->options.tap_drag);
++
++	if (libinput_device_config_3fg_drag_get_finger_count(device) >= 3 &&
++	    libinput_device_config_3fg_drag_set_enabled(device,
++							driver_data->options.drag_3fg) != LIBINPUT_CONFIG_STATUS_SUCCESS)
++		xf86IDrvMsg(pInfo, X_ERROR,
++			    "Failed to set 3-finger drag to %d fingers\n",
++			    drag_3fg_to_fingers(driver_data->options.drag_3fg));
+ }
+ 
+ static void
+@@ -2936,6 +2964,47 @@
+ 	return drag_lock;
+ }
+ 
++static inline enum libinput_config_3fg_drag_state
++xf86libinput_parse_3fg_drag_option(InputInfoPtr pInfo,
++				   struct libinput_device *device)
++{
++	enum libinput_config_3fg_drag_state state;
++	char *str;
++
++	if (libinput_device_config_3fg_drag_get_finger_count(device) < 3)
++		return LIBINPUT_CONFIG_3FG_DRAG_DISABLED;
++
++	state = libinput_device_config_3fg_drag_get_enabled(device);
++	str = xf86SetStrOption(pInfo->options,
++			       "ThreeFingerDrag",
++			       NULL);
++	if (str) {
++		if (streq(str, "off") || streq(str, "false") ||
++		    streq(str, "no") || streq(str, "0"))
++			state = LIBINPUT_CONFIG_3FG_DRAG_DISABLED;
++		else if (streq(str, "on") || streq(str, "true") ||
++			 streq(str, "yes") || streq(str, "3"))
++			state = LIBINPUT_CONFIG_3FG_DRAG_ENABLED_3FG;
++		else if (streq(str, "4"))
++			state = LIBINPUT_CONFIG_3FG_DRAG_ENABLED_4FG;
++		else
++			xf86IDrvMsg(pInfo, X_ERROR,
++				    "Invalid ThreeFingerDrag: %s\n",
++				    str);
++		free(str);
++	}
++
++	if (libinput_device_config_3fg_drag_set_enabled(device, state) !=
++	    LIBINPUT_CONFIG_STATUS_SUCCESS) {
++		xf86IDrvMsg(pInfo, X_ERROR,
++			    "Failed to set 3-finger drag to %d fingers\n",
++			    drag_3fg_to_fingers(state));
++		state = libinput_device_config_3fg_drag_get_enabled(device);
++	}
++
++	return state;
++}
++
+ static inline enum libinput_config_tap_button_map
+ xf86libinput_parse_tap_buttonmap_option(InputInfoPtr pInfo,
+ 					struct libinput_device *device)
+@@ -3755,6 +3824,7 @@
+ 	options->tap_drag = xf86libinput_parse_tap_drag_option(pInfo, device);
+ 	options->tap_drag_lock = xf86libinput_parse_tap_drag_lock_option(pInfo, device);
+ 	options->tap_button_map = xf86libinput_parse_tap_buttonmap_option(pInfo, device);
++	options->drag_3fg = xf86libinput_parse_3fg_drag_option(pInfo, device);
+ 	options->speed = xf86libinput_parse_accel_option(pInfo, device);
+ 	options->accel_profile = xf86libinput_parse_accel_profile_option(pInfo, device);
+ #if HAVE_LIBINPUT_CUSTOM_ACCEL
+@@ -4222,6 +4292,8 @@
+ static Atom prop_tap_drag_default;
+ static Atom prop_tap_drag_lock;
+ static Atom prop_tap_drag_lock_default;
++static Atom prop_3fg_drag;
++static Atom prop_3fg_drag_default;
+ static Atom prop_tap_buttonmap;
+ static Atom prop_tap_buttonmap_default;
+ static Atom prop_calibration;
+@@ -4497,6 +4569,37 @@
+ }
+ 
+ static inline int
++LibinputSetProperty3fgDrag(DeviceIntPtr dev,
++			   Atom atom,
++			   XIPropertyValuePtr val,
++			   BOOL checkonly)
++{
++	InputInfoPtr pInfo = dev->public.devicePrivate;
++	struct xf86libinput *driver_data = pInfo->private;
++	struct libinput_device *device = driver_data->shared_device->device;
++	CARD8 fingers;
++
++	if (val->format != 8 || val->size != 1 || val->type != XA_INTEGER)
++		return BadMatch;
++
++	fingers = *(CARD8*)val->data;
++	if (checkonly) {
++		if (fingers != 0 && fingers != 3 && fingers != 4)
++			return BadValue;
++
++		if (!xf86libinput_check_device(dev, atom))
++			return BadMatch;
++
++		if (libinput_device_config_3fg_drag_get_finger_count(device) < fingers)
++			return BadValue;
++	} else {
++		driver_data->options.drag_3fg = fingers_to_drag_3fg(fingers);
++	}
++
++	return Success;
++}
++
++static inline int
+ LibinputSetPropertyTapButtonmap(DeviceIntPtr dev,
+ 				Atom atom,
+ 				XIPropertyValuePtr val,
+@@ -5455,6 +5558,8 @@
+ 		rc = LibinputSetPropertyTapDrag(dev, atom, val, checkonly);
+ 	else if (atom == prop_tap_drag_lock)
+ 		rc = LibinputSetPropertyTapDragLock(dev, atom, val, checkonly);
++	else if (atom == prop_3fg_drag)
++		rc = LibinputSetProperty3fgDrag(dev, atom, val, checkonly);
+ 	else if (atom == prop_tap_buttonmap)
+ 		rc = LibinputSetPropertyTapButtonmap(dev, atom, val, checkonly);
+ 	else if (atom == prop_calibration)
+@@ -5548,6 +5653,7 @@
+ 		 atom == prop_tap_default ||
+ 		 atom == prop_tap_drag_default ||
+ 		 atom == prop_tap_drag_lock_default ||
++		 atom == prop_3fg_drag_default ||
+ 		 atom == prop_tool_id ||
+ 		 atom == prop_device)
+ 		return BadAccess; /* read-only */
+@@ -5666,6 +5772,33 @@
+ }
+ 
+ static void
++LibinputInit3fgDragProperty(DeviceIntPtr dev,
++			    struct xf86libinput *driver_data,
++			    struct libinput_device *device)
++{
++	CARD8 fingers = drag_3fg_to_fingers(driver_data->options.drag_3fg);
++
++	if (!subdevice_has_capabilities(dev, CAP_POINTER))
++		return;
++
++	if (libinput_device_config_3fg_drag_get_finger_count(device) < 3)
++		return;
++
++	prop_3fg_drag = LibinputMakeProperty(dev,
++					     LIBINPUT_PROP_3FG_DRAG,
++					     XA_INTEGER, 8,
++					     1, &fingers);
++	if (!prop_3fg_drag)
++		return;
++
++	fingers = drag_3fg_to_fingers(libinput_device_config_3fg_drag_get_default_enabled(device));
++	prop_3fg_drag_default = LibinputMakeProperty(dev,
++						     LIBINPUT_PROP_3FG_DRAG_DEFAULT,
++						     XA_INTEGER, 8,
++						     1, &fingers);
++}
++
++static void
+ LibinputInitTapButtonmapProperty(DeviceIntPtr dev,
+ 				 struct xf86libinput *driver_data,
+ 				 struct libinput_device *device)
+@@ -6695,6 +6828,7 @@
+ 	LibinputInitTapDragProperty(dev, driver_data, device);
+ 	LibinputInitTapDragLockProperty(dev, driver_data, device);
+ 	LibinputInitTapButtonmapProperty(dev, driver_data, device);
++	LibinputInit3fgDragProperty(dev, driver_data, device);
+ 	LibinputInitNaturalScrollProperty(dev, driver_data, device);
+ 	LibinputInitDisableWhileTypingProperty(dev, driver_data, device);
+ 	LibinputInitScrollMethodsProperty(dev, driver_data, device);

@@ -1,0 +1,54 @@
+# Firmware for PC hardware: every relevant package from Debian's
+# non-free-firmware archive. (live-build's --firmware-chroot would instead
+# install *every* package that ships firmware files, including astronomy
+# cameras, SmartNICs and switch ASICs, which only bloats a USB system.)
+
+# CPU microcode
+amd64-microcode
+intel-microcode
+
+# Wi-Fi and Bluetooth
+firmware-iwlwifi
+firmware-ipw2x00
+firmware-realtek
+firmware-atheros
+firmware-ath9k-htc
+firmware-carl9170
+firmware-brcm80211
+firmware-b43-installer
+firmware-b43legacy-installer
+firmware-libertas
+firmware-ti-connectivity
+firmware-zd1211
+firmware-mediatek
+atmel-firmware
+bluez-firmware
+wireless-regdb
+
+# Wired network adapters
+firmware-bnx2
+firmware-bnx2x
+firmware-cavium
+firmware-myricom
+firmware-netxen
+firmware-qlogic
+
+# Sound
+firmware-intel-sound
+firmware-sof-signed
+firmware-cirrus
+alsa-firmware-loaders
+
+# Graphics (needed for the desktop to come up on AMD, Intel, NVIDIA GPUs)
+firmware-amd-graphics
+firmware-intel-graphics
+firmware-nvidia-graphics
+firmware-ast
+
+# Everything else (USB/TV/DVB devices, misc chips)
+firmware-linux-free
+firmware-linux-nonfree
+firmware-misc-nonfree
+firmware-intel-misc
+firmware-ivtv
+firmware-siano

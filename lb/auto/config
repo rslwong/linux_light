@@ -1,0 +1,42 @@
+#!/bin/sh
+# Invoked by "lb config". The variables come from settings.conf, exported by
+# scripts/lb-build.sh.
+
+set -e
+
+BOOT_COMMON="boot=live components persistence username=${LIVE_USERNAME} hostname=${LIVE_HOSTNAME} locales=${LIVE_LOCALE} keyboard-layouts=${LIVE_KEYBOARD} timezone=${LIVE_TIMEZONE}"
+
+lb config noauto \
+	--distribution "${DIST}" \
+	--architecture amd64 \
+	--archive-areas "main contrib non-free non-free-firmware" \
+	--mirror-bootstrap "${MIRROR}" \
+	--mirror-chroot "${MIRROR}" \
+	--mirror-binary "${MIRROR}" \
+	--mirror-chroot-security "${SECURITY_MIRROR}" \
+	--mirror-binary-security "${SECURITY_MIRROR}" \
+	--security true \
+	--updates true \
+	--apt-recommends false \
+	--apt-indices true \
+	--linux-packages linux-image \
+	--firmware-chroot false \
+	--firmware-binary false \
+	--debian-installer none \
+	--binary-images iso-hybrid \
+	--bootloaders "grub-pc,grub-efi" \
+	--uefi-secure-boot auto \
+	--build-with-chroot false \
+	--chroot-squashfs-compression-type zstd \
+	--chroot-squashfs-compression-level 19 \
+	--bootappend-live "${BOOT_COMMON} quiet" \
+	--bootappend-live-failsafe "${BOOT_COMMON} nomodeset noapic noapm nodma nomce nosplash" \
+	--image-name "${IMAGE_NAME}" \
+	--iso-volume "${ISO_VOLUME}" \
+	--iso-application "Linux Light" \
+	--iso-publisher "Linux Light" \
+	--memtest none \
+	--win32-loader false \
+	--zsync false \
+	--checksums sha256 \
+	"${@}"

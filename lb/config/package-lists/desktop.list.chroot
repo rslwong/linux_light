@@ -1,0 +1,55 @@
+# X11 (dwm itself is compiled from /usr/local/src/dwm by a chroot hook)
+xserver-xorg
+xserver-xorg-core
+xserver-xorg-legacy
+xserver-xorg-video-all
+xserver-xorg-input-all
+xinit
+x11-xserver-utils
+x11-utils
+x11-xkb-utils
+xfonts-base
+libgl1-mesa-dri
+mesa-vulkan-drivers
+
+# Fonts, themes, icons. Noto CJK covers Chinese (Simplified, Traditional,
+# Hong Kong), Japanese and Korean; without it web pages show empty boxes.
+fonts-dejavu
+fonts-liberation
+fonts-noto-cjk
+adwaita-icon-theme
+adwaita-icon-theme-legacy
+hicolor-icon-theme
+
+# dwm companions: dmenu + slock, notifications, display/brightness helpers.
+# lxpolkit is listed so apt doesn't pick a heavy Qt agent for nm-applet's
+# polkit-1-auth-agent dependency.
+suckless-tools
+lxpolkit
+dunst
+libnotify-bin
+arandr
+brightnessctl
+xclip
+scrot
+xdg-utils
+
+# Touchpad settings menu (linux-light-touchpad)
+xinput
+whiptail
+
+# Screen switching / hotplug watcher (linux-light-display); arandr is above
+python3
+
+# Applications (Tilix is the default terminal, x-terminal-emulator)
+tilix
+dconf-gsettings-backend
+pcmanfm
+gvfs
+gvfs-backends
+gvfs-fuse
+udisks2
+mousepad
+xarchiver
+firefox-esr
+gparted

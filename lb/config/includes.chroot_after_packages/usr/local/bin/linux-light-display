@@ -1,0 +1,325 @@
+#!/usr/bin/python3
+"""Laptop screen plus an external screen (HDMI, DisplayPort, USB-C).
+
+  linux-light-display           menu: Super+Shift+p or the laptop's display key
+  linux-light-display MODE      extend-right, extend-left, mirror, external, laptop
+  linux-light-display --watch   started with the session; see below
+
+The watcher notices screens being plugged in or out. It restores the layout
+last used with that set of screens (screens are told apart by their EDID), or
+extends a new screen to the right of the laptop, and falls back to the laptop
+screen when the external one is unplugged. Layouts are remembered whichever
+way they were made (this menu, arandr, xrandr) in
+~/.config/linux-light/displays.json.
+"""
+
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+STORE = os.path.join(CONFIG, "linux-light", "displays.json")
+POLL_SECONDS = 2
+
+INTERNAL = re.compile(r"^(eDP|LVDS|DSI)", re.IGNORECASE)
+HEADER = re.compile(
+    r"^(\S+) (connected|disconnected)( primary)?"
+    r"(?: (\d+)x(\d+)\+(-?\d+)\+(-?\d+))?"
+    r"(?: \(0x[0-9a-f]+\))?"
+    r"(?: (normal|left|inverted|right))?")
+MODE = re.compile(r"^\s+(\d+)x(\d+)i? \(0x[0-9a-f]+\)")
+HEX = re.compile(r"^\s+[0-9a-f]+$")
+
+
+class Output:
+    def __init__(self, name, connected, primary, geometry, rotation):
+        self.name = name
+        self.connected = connected
+        self.primary = primary
+        self.geometry = geometry      # (w, h, x, y) when active, else None
+        self.rotation = rotation or "normal"
+        self.modes = []               # [(w, h)], best first as xrandr lists them
+        self.preferred = None
+        self.edid = ""
+
+    def best_mode(self):
+        return self.preferred or (self.modes[0] if self.modes else None)
+
+
+def query():
+    """Current outputs, without making X probe the hardware again."""
+    text = subprocess.run(["xrandr", "--verbose", "--current"], check=True,
+                          capture_output=True, text=True).stdout
+    outputs, cur, in_edid = [], None, False
+    for line in text.splitlines():
+        m = HEADER.match(line)
+        if m:
+            name, state, primary, w, h, x, y, rotation = m.groups()
+            geometry = tuple(map(int, (w, h, x, y))) if w else None
+            cur = Output(name, state == "connected", bool(primary), geometry, rotation)
+            outputs.append(cur)
+            in_edid = False
+            continue
+        if cur is None:
+            continue
+        if line.strip() == "EDID:":
+            in_edid = True
+            continue
+        if in_edid and HEX.match(line):
+            cur.edid += line.strip()
+            continue
+        in_edid = False
+        m = MODE.match(line)
+        if m:
+            mode = (int(m.group(1)), int(m.group(2)))
+            if mode not in cur.modes:
+                cur.modes.append(mode)
+            if "+preferred" in line and cur.preferred is None:
+                cur.preferred = mode
+    return outputs
+
+
+def split(outputs):
+    """(laptop screen, [external screens]) among the connected outputs."""
+    connected = [o for o in outputs if o.connected]
+    internal = next((o for o in connected if INTERNAL.match(o.name)), None)
+    if internal is None and connected:
+        internal = connected[0]
+    return internal, [o for o in connected if o is not internal]
+
+
+def fingerprint(outputs):
+    """Identifies a set of connected screens, e.g. a particular HDMI monitor."""
+    return ",".join(
+        f"{o.name}:{hashlib.md5(o.edid.encode()).hexdigest()[:8] if o.edid else '-'}"
+        for o in sorted(outputs, key=lambda o: o.name) if o.connected)
+
+
+def signature(outputs):
+    """The current layout, to notice changes made by other tools."""
+    return sorted((o.name, o.geometry, o.rotation, o.primary)
+                  for o in outputs if o.geometry)
+
+
+def mode_name(w, h):
+    return f"{w}x{h}"
+
+
+def place(output, mode, x, y, primary=False):
+    args = ["--output", output.name, "--mode", mode_name(*mode),
+            "--pos", f"{x}x{y}", "--rotate", "normal"]
+    return args + (["--primary"] if primary else [])
+
+
+def off_others(outputs, keep):
+    args = []
+    for o in outputs:
+        if o not in keep and (o.connected or o.geometry):
+            args += ["--output", o.name, "--off"]
+    return args
+
+
+def layout(outputs, mode):
+    """xrandr arguments for one of the standard modes, or None if not possible."""
+    internal, externals = split(outputs)
+    if internal is None:
+        return None
+    if mode == "laptop" or (not externals and mode != "external"):
+        return place(internal, internal.best_mode(), 0, 0, True) + off_others(outputs, [internal])
+    if not externals:
+        return None
+    if mode in ("extend-right", "extend-left"):
+        row = [internal] + externals if mode == "extend-right" else externals + [internal]
+        args, x = [], 0
+        for o in row:
+            w, h = o.best_mode()
+            args += place(o, (w, h), x, 0, o is internal)
+            x += w
+        return args + off_others(outputs, row)
+    if mode == "mirror":
+        # The largest resolution both screens can show, but not more than the
+        # laptop panel's own (virtual machines offer any size).
+        shown = [internal] + externals
+        common = set(internal.modes)
+        for o in externals:
+            common &= set(o.modes)
+        native = internal.best_mode()
+        common = {m for m in common if m[0] <= native[0] and m[1] <= native[1]} or common
+        args = []
+        for o in shown:
+            m = max(common, key=lambda m: m[0] * m[1]) if common else o.best_mode()
+            args += place(o, m, 0, 0, o is internal)
+        return args + off_others(outputs, shown)
+    if mode == "external":
+        ext = externals[0]
+        return place(ext, ext.best_mode(), 0, 0, True) + off_others(outputs, [ext])
+    return None
+
+
+def current_args(outputs):
+    """xrandr arguments that recreate the current layout."""
+    args = []
+    for o in outputs:
+        if o.geometry:
+            w, h, x, y = o.geometry
+            if o.rotation in ("left", "right"):
+                w, h = h, w
+            args += ["--output", o.name, "--mode", mode_name(w, h),
+                     "--pos", f"{x}x{y}", "--rotate", o.rotation]
+            args += ["--primary"] if o.primary else []
+        elif o.connected:
+            args += ["--output", o.name, "--off"]
+    return args
+
+
+def xrandr(args):
+    return bool(args) and subprocess.run(["xrandr"] + args).returncode == 0
+
+
+def load():
+    try:
+        with open(STORE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save(store):
+    os.makedirs(os.path.dirname(STORE), exist_ok=True)
+    tmp = STORE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(store, f, indent=1)
+    os.replace(tmp, STORE)
+
+
+def notify(title, body=""):
+    subprocess.run(["notify-send", "-t", "8000", title, body],
+                   stderr=subprocess.DEVNULL)
+
+
+def describe(outputs):
+    internal, externals = split(outputs)
+    if not externals:
+        return "Laptop screen only"
+    ext = externals[0]
+    if not ext.geometry:
+        return "Laptop screen only"
+    if internal is None or not internal.geometry:
+        return "External screen only"
+    if ext.geometry[2:] == internal.geometry[2:]:
+        return "Mirrored"
+    return "Extended to the right" if ext.geometry[2] > internal.geometry[2] else "Extended to the left"
+
+
+def any_screen_on(outputs):
+    return any(o.geometry for o in outputs if o.connected)
+
+
+class Watcher:
+    """Follows the connected screens; step() runs once per poll."""
+
+    def __init__(self):
+        self.store = load()
+        self.fp = self.sig = self.externals = None
+
+    def step(self):
+        outputs = query()
+        fp, sig = fingerprint(outputs), signature(outputs)
+        if fp != self.fp:
+            # A screen was plugged in or out: restore what was used last time.
+            if not xrandr(self.store.get(fp, [])):
+                xrandr(layout(outputs, "extend-right"))
+            time.sleep(1)
+            outputs = query()
+            if not any_screen_on(outputs):
+                xrandr(layout(outputs, "laptop"))
+                outputs = query()
+            externals = [o.name for o in split(outputs)[1]]
+            if self.externals is not None and externals != self.externals:
+                if externals:
+                    notify(f"Screen connected: {', '.join(externals)}",
+                           f"{describe(outputs)}. Super+Shift+p to change.")
+                else:
+                    notify("External screen disconnected", "Back to the laptop screen.")
+            self.fp, self.sig, self.externals = fp, signature(outputs), externals
+        elif sig != self.sig:
+            # Changed with this menu, arandr or xrandr: remember it. A layout
+            # with every screen off is a mistake: turn the laptop screen back on.
+            if any_screen_on(outputs):
+                self.store = load()
+                self.store[fp] = current_args(outputs)
+                save(self.store)
+                self.sig = sig
+            else:
+                xrandr(layout(outputs, "laptop"))
+                self.sig = signature(query())
+
+
+def watch():
+    watcher = Watcher()
+    while True:
+        try:
+            watcher.step()
+        except (subprocess.CalledProcessError, OSError):
+            return  # the X server is gone
+        time.sleep(POLL_SECONDS)
+
+
+MENU = [
+    ("Extend: external screen on the right", "extend-right"),
+    ("Extend: external screen on the left", "extend-left"),
+    ("Mirror: same picture on both screens", "mirror"),
+    ("External screen only", "external"),
+    ("Laptop screen only", "laptop"),
+    ("Arrange screens (arandr)...", "arandr"),
+]
+
+
+def menu():
+    # Re-probe the hardware first, like a "Detect displays" button.
+    subprocess.run(["xrandr", "--query"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    outputs = query()
+    _, externals = split(outputs)
+    items = MENU if externals else [i for i in MENU if i[1] in ("laptop", "arandr")]
+    prompt = "Screens:" if externals else "No external screen found:"
+    choice = subprocess.run(
+        ["dmenu", "-i", "-l", str(len(items)), "-p", prompt,
+         "-fn", "DejaVu Sans Mono:size=10",
+         "-nb", "#222222", "-nf", "#bbbbbb", "-sb", "#005577", "-sf", "#eeeeee"],
+        input="\n".join(label for label, _ in items), capture_output=True, text=True).stdout.strip()
+    mode = dict(items).get(choice)
+    if mode == "arandr":
+        subprocess.Popen(["arandr"])
+    elif mode:
+        apply(mode)
+
+
+def apply(mode):
+    args = layout(query(), mode)
+    if args is None:
+        notify("No external screen found")
+        sys.exit(1)
+    if not xrandr(args):
+        notify("Could not change the screens", " ".join(args))
+        sys.exit(1)
+
+
+def main():
+    arg = sys.argv[1] if len(sys.argv) > 1 else ""
+    if arg == "--watch":
+        watch()
+    elif arg in ("extend-right", "extend-left", "mirror", "external", "laptop"):
+        apply(arg)
+    elif arg == "":
+        menu()
+    else:
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

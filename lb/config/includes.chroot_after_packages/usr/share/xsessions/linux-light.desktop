@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=Linux Light (dwm)
+Comment=dwm with network, volume and Bluetooth tray applets
+Exec=/usr/local/bin/linux-light-session
+Type=XSession

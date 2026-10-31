@@ -1,0 +1,35 @@
+#!/bin/sh
+# System defaults for Linux Light.
+
+set -e
+
+# The running kernel always comes from the ISO, so kernel upgrades inside
+# the live system would only fill up the persistence storage. Build a new
+# ISO to get a newer kernel.
+apt-mark hold linux-image-amd64
+
+# Tilix is the default terminal (x-terminal-emulator, dwm's Super+Shift+Enter).
+update-alternatives --set x-terminal-emulator /usr/bin/tilix.wrapper
+
+# Let Tilix open new terminals and splits in the current directory.
+if ! grep -q vte-2.91.sh /etc/skel/.bashrc; then
+	cat >> /etc/skel/.bashrc <<'EOF'
+
+# Tilix: track the working directory for new terminals and splits.
+if [ -n "$TILIX_ID" ] || [ -n "$VTE_VERSION" ]; then
+	. /etc/profile.d/vte-2.91.sh
+fi
+EOF
+fi
+
+# Our gschema override was copied in after the packages' triggers ran.
+# (libglib2.0 keeps its own copy of the compiler outside $PATH.)
+for compiler in /usr/bin/glib-compile-schemas /usr/lib/*/glib-2.0/glib-compile-schemas; do
+	if [ -x "${compiler}" ]; then
+		"${compiler}" /usr/share/glib-2.0/schemas
+		break
+	fi
+done
+grep -q warn-vte-config-issue /usr/share/glib-2.0/schemas/gschemas.compiled
+
+chmod 0755 /usr/local/bin/linux-light-* /usr/local/sbin/linux-light-*

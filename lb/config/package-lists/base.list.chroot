@@ -1,0 +1,66 @@
+# Live system plumbing (the kernel itself comes from lb config --linux-packages)
+live-boot
+live-config
+live-config-systemd
+live-tools
+user-setup
+sudo
+systemd-sysv
+libpam-systemd
+dbus
+dbus-user-session
+polkitd
+pkexec
+locales
+keyboard-configuration
+console-setup
+tzdata
+uuid-runtime
+eject
+
+# Signed shim + GRUB for UEFI Secure Boot. live-build copies them from the
+# chroot onto the ISO's EFI partition (we build with --build-with-chroot false).
+shim-signed
+grub-efi-amd64-signed
+
+# CPU microcode
+intel-microcode
+amd64-microcode
+
+# Package management (apt itself is part of the base system)
+apt-utils
+ca-certificates
+gnupg
+
+# Command line essentials
+bash-completion
+less
+nano
+vim-tiny
+man-db
+htop
+curl
+wget
+file
+lsof
+psmisc
+pciutils
+usbutils
+lshw
+dmidecode
+rsync
+zip
+unzip
+7zip
+xz-utils
+zstd
+bzip2
+
+# Disks and filesystems
+parted
+gdisk
+dosfstools
+exfatprogs
+ntfs-3g
+btrfs-progs
+cryptsetup

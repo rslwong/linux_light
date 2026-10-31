@@ -1,0 +1,15 @@
+#!/bin/sh
+# Volume keys: linux-light-volume up|down|mute|micmute
+
+case "$1" in
+	up) wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+ ;;
+	down) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- ;;
+	mute) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+	micmute) wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle ;;
+	*) echo "usage: $0 up|down|mute|micmute" >&2; exit 1 ;;
+esac
+
+# Refresh the status bar right away.
+pid="$(cat "${XDG_RUNTIME_DIR:-/tmp}/linux-light-status.pid" 2>/dev/null)" \
+	&& kill -USR1 "$pid" 2>/dev/null
+exit 0

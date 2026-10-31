@@ -1,0 +1,51 @@
+#!/bin/sh
+# X session for Linux Light: status bar, tray applets, then dwm.
+# Started from ~/.xinitrc (live-config autologins on tty1 and runs startx).
+# Put your own additions in ~/.config/linux-light/autostart (executable).
+
+export XDG_CURRENT_DESKTOP=dwm
+export XDG_SESSION_TYPE=x11
+
+# Let systemd user units and D-Bus activated services see this display.
+dbus-update-activation-environment --systemd DISPLAY XAUTHORITY \
+	XDG_CURRENT_DESKTOP XDG_SESSION_TYPE 2>/dev/null
+
+# Keyboard layout chosen at boot (keyboard-layouts=...) or with
+# "sudo dpkg-reconfigure keyboard-configuration".
+if [ -r /etc/default/keyboard ]; then
+	. /etc/default/keyboard
+	setxkbmap ${XKBMODEL:+-model "$XKBMODEL"} ${XKBLAYOUT:+-layout "$XKBLAYOUT"} \
+		${XKBVARIANT:+-variant "$XKBVARIANT"} ${XKBOPTIONS:+-option "$XKBOPTIONS"}
+fi
+
+xsetroot -solid '#16202a' -cursor_name left_ptr
+
+# This user's touchpad settings (linux-light-touchpad, Super+Shift+t).
+linux-light-touchpad --apply
+
+dunst &
+lxpolkit &
+# Mirror/extend handling for external screens (linux-light-display, Super+Shift+p).
+linux-light-display --watch &
+linux-light-status &
+
+# The tray applets need dwm's systray, so start them once dwm is up.
+(
+	sleep 1
+	nm-applet &
+	pasystray &
+	blueman-applet &
+
+	mark="$HOME/.config/linux-light/welcomed"
+	if [ ! -e "$mark" ]; then
+		mkdir -p "${mark%/*}" && touch "$mark"
+		notify-send -t 15000 "Welcome to Linux Light" \
+			"Super+F1 shows the keyboard shortcuts. Wi-Fi: network icon at the top right, or Super+n."
+	fi
+
+	if [ -x "$HOME/.config/linux-light/autostart" ]; then
+		"$HOME/.config/linux-light/autostart" &
+	fi
+) &
+
+exec dwm

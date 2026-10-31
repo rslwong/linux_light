@@ -1,0 +1,41 @@
+#!/bin/sh
+# Rebuild and install dwm from /usr/local/src/dwm (edit config.h there first).
+#
+#   sudo linux-light-rebuild-dwm           keep the compiler installed afterwards
+#   sudo linux-light-rebuild-dwm --purge   remove what it installed afterwards
+#
+# Then press Super+Shift+q to restart the session with the new dwm.
+
+set -e
+
+SRC=/usr/local/src/dwm
+BUILD_DEPS="build-essential libx11-dev libxft-dev libxinerama-dev libfontconfig-dev libfreetype-dev"
+
+if [ "$(id -u)" -ne 0 ]; then
+	exec sudo "$0" "$@"
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+
+installed() {
+	dpkg-query -W -f '${db:Status-Abbrev} ${Package}\n' | awk '/^ii/ { print $2 }' | sort
+}
+
+# Remember what is installed now, so --purge removes exactly what this run
+# adds (apt's autoremove would keep e.g. gcc, because apt Suggests dpkg-dev).
+before="$(mktemp)"
+trap 'rm -f "${before}"' EXIT
+installed > "${before}"
+
+apt-get install -y --no-install-recommends ${BUILD_DEPS} \
+	|| { apt-get update && apt-get install -y --no-install-recommends ${BUILD_DEPS}; }
+added="$(installed | comm -13 "${before}" -)"
+
+make -C "${SRC}" clean install PREFIX=/usr/local
+make -C "${SRC}" clean
+
+if [ "$1" = "--purge" ] && [ -n "${added}" ]; then
+	apt-get purge -y ${added}
+fi
+
+echo "dwm rebuilt. Press Super+Shift+q to restart the session with it."

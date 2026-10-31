@@ -1,0 +1,4 @@
+#!/bin/sh
+# Shows the Linux Light cheat sheet (Super+F1, or click the status text).
+
+exec x-terminal-emulator -T "Linux Light help" -e less /usr/share/doc/linux-light/README.txt

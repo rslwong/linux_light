@@ -1,0 +1,7 @@
+# Linux Light defaults (compiled by the 0200-linux-light hook).
+
+# ~/.bashrc sources vte-2.91.sh for Tilix, so its first-run warning is moot.
+# Tilix has its own light/dark switch; follow the desktop's dark theme.
+[com.gexperts.Tilix.Settings]
+warn-vte-config-issue=false
+theme-variant='dark'

@@ -1,0 +1,32 @@
+# NetworkManager: nm-applet (tray) for normal use, nmtui as the text fallback
+network-manager
+network-manager-gnome
+wpasupplicant
+wireless-regdb
+iw
+rfkill
+wireless-tools
+ethtool
+iproute2
+iputils-ping
+dnsmasq-base
+bind9-dnsutils
+traceroute
+openssh-client
+
+# Zeroconf / mDNS: resolve <name>.local and announce this machine as
+# <hostname>.local (avahi-browse / avahi-resolve for troubleshooting)
+avahi-daemon
+libnss-mdns
+avahi-utils
+
+# Mobile broadband / USB modems / PPP
+modemmanager
+mobile-broadband-provider-info
+usb-modeswitch
+usb-modeswitch-data
+ppp
+
+# Bluetooth (also used for Bluetooth audio)
+bluez
+blueman

@@ -1,0 +1,14 @@
+#!/bin/sh
+# Power menu (Super+Shift+e).
+
+choice="$(printf '%s\n' lock suspend "restart session" reboot "power off" \
+	| dmenu -i -p "Power:" -fn "DejaVu Sans Mono:size=10" \
+		-nb '#222222' -nf '#bbbbbb' -sb '#005577' -sf '#eeeeee')" || exit 0
+
+case "$choice" in
+	lock) slock ;;
+	suspend) slock & sleep 1; systemctl suspend ;;
+	"restart session") pkill -x dwm ;;
+	reboot) systemctl reboot ;;
+	"power off") systemctl poweroff ;;
+esac

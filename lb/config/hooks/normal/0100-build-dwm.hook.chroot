@@ -1,0 +1,8 @@
+#!/bin/sh
+# Compile the systray-patched dwm from /usr/local/src/dwm and drop the
+# compiler again afterwards to keep the image small.
+
+set -e
+
+/usr/local/sbin/linux-light-rebuild-dwm --purge
+test -x /usr/local/bin/dwm

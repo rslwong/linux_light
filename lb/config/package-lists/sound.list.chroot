@@ -1,0 +1,17 @@
+# PipeWire with PulseAudio/ALSA compatibility, Bluetooth audio, and the
+# UCM/topology files that modern laptop sound (Intel SOF, AMD ACP) needs
+pipewire-audio
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+libspa-0.2-bluetooth
+rtkit
+alsa-utils
+alsa-ucm-conf
+alsa-topology-conf
+pulseaudio-utils
+
+# Mixer applet (tray) and full mixer window
+pasystray
+pavucontrol
