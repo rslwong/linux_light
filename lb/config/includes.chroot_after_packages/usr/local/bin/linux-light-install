@@ -1,0 +1,29 @@
+#!/bin/sh
+# Starts the installer that puts Linux Light on this computer's disk
+# (Super+Shift+i in the live system). Based on Debian's
+# calamares-install-debian.
+
+if [ ! -d /run/live/medium ] || ! command -v calamares > /dev/null; then
+	notify-send "Linux Light is already installed" \
+		"The installer runs from the Linux Light USB stick or ISO."
+	exit 1
+fi
+
+# A failed or cancelled earlier attempt can leave the target disk mounted,
+# and Calamares then offers only manual partitioning.
+awk '$2 ~ "^/tmp/calamares-root-" { print $2 }' /proc/mounts | sort -r \
+	| while read -r mnt; do sudo umount -l "${mnt}"; done
+
+# live-build's /etc/fstab (the live overlay) confuses the partitioning step.
+if [ -e /etc/fstab ]; then
+	sudo mv /etc/fstab /etc/fstab.orig.calamares
+fi
+
+# Calamares runs as root; let root use this X display while it runs.
+xhost +si:localuser:root > /dev/null
+pkexec calamares
+xhost -si:localuser:root > /dev/null
+
+if [ -e /etc/fstab.orig.calamares ]; then
+	sudo mv /etc/fstab.orig.calamares /etc/fstab
+fi

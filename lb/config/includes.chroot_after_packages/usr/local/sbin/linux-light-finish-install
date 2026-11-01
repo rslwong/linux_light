@@ -1,0 +1,54 @@
+#!/bin/sh
+# Last step of the installer (Calamares, shellprocess@linux-light). Runs
+# inside the newly installed system, after the packages step has removed the
+# live-only packages, and deletes itself at the end. Nothing in here may fail
+# the whole installation: problems are only logged.
+
+warn() { echo "linux-light-finish-install: warning: $*" >&2; }
+
+# The live image holds the kernel because it always boots the ISO's kernel;
+# an installed system updates its kernel normally.
+apt-mark unhold linux-image-amd64 || warn "could not unhold the kernel"
+
+# The installer and what only it needed (Qt, KDE Frameworks, ...).
+apt-get -y --purge autoremove || warn "apt-get autoremove failed"
+apt-get clean
+
+if [ -d /sys/firmware/efi ]; then
+	# Also put shim and GRUB in the removable-media path, EFI/BOOT, which the
+	# firmware boots when the boot entry is gone (firmware updates and resets
+	# can clear them) or when the disk moves to another computer. GRUB updates
+	# keep doing so because of the debconf setting. "linux" is the directory
+	# GRUB updates use: the first word of GRUB_DISTRIBUTOR ("Linux Light"),
+	# and efiBootloaderId in /etc/calamares/modules/bootloader.conf.
+	echo "grub-efi-amd64 grub2/force_efi_extra_removable boolean true" | debconf-set-selections
+	grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=linux \
+		--force-extra-removable --no-nvram || warn "grub-install --force-extra-removable failed"
+
+	# Debian's signed GRUB looks for EFI/debian/grub.cfg first, and started
+	# from EFI/BOOT it may find no other. The file only points to
+	# /boot/grub/grub.cfg on the root filesystem. One from an installed
+	# Debian is left alone.
+	if [ ! -e /boot/efi/EFI/debian/grub.cfg ] && [ -e /boot/efi/EFI/linux/grub.cfg ]; then
+		mkdir -p /boot/efi/EFI/debian
+		cp /boot/efi/EFI/linux/grub.cfg /boot/efi/EFI/debian/grub.cfg
+	fi
+else
+	# Tell grub-pc which disk to update when GRUB is updated. Without this the
+	# boot code on the disk stays old and stops matching GRUB's modules.
+	disk=$(grub-probe -t disk /boot/grub) || warn "grub-probe failed"
+	for link in /dev/disk/by-id/*; do
+		if [ -n "${disk}" ] && [ "$(readlink -f "${link}")" = "${disk}" ]; then
+			disk=${link}
+			break
+		fi
+	done
+	if [ -n "${disk}" ]; then
+		echo "grub-pc grub-pc/install_devices multiselect ${disk}" | debconf-set-selections
+	fi
+fi
+
+# Installer configuration that came along from the live image.
+rm -rf /etc/calamares
+rm -f "$0"
+exit 0

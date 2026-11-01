@@ -9,6 +9,10 @@
 #   --secure-boot           UEFI with Secure Boot enforced (Microsoft keys)
 #   --persistence FILE      attach FILE as a second disk, e.g. a file made by
 #                           tools/make-ventoy-persistence.sh
+#   --disk FILE             attach FILE as the computer's internal disk, to try
+#                           the installer on (created as a 20 GB qcow2 if missing)
+#   --no-stick              boot without the stick, e.g. the system installed
+#                           on --disk
 #   --memory MB             RAM size (default: 4096)
 #   -h, --help              show this help
 #
@@ -20,7 +24,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 . "${ROOT}/settings.conf"
 
 usage() {
-	sed -n '2,15s/^# \{0,1\}//p' "$0"
+	sed -n '2,19s/^# \{0,1\}//p' "$0"
 }
 
 die() {
@@ -30,6 +34,8 @@ die() {
 
 FIRMWARE=uefi
 PERSISTENCE=""
+DISK=""
+STICK=1
 MEMORY=4096
 IMAGE="${ROOT}/out/${IMAGE_NAME}-amd64.iso"
 EXTRA=()
@@ -39,6 +45,8 @@ while [ $# -gt 0 ]; do
 		--bios) FIRMWARE=bios; shift ;;
 		--secure-boot) FIRMWARE=secure; shift ;;
 		--persistence) PERSISTENCE="${2:?missing file}"; shift 2 ;;
+		--disk) DISK="${2:?missing file}"; shift 2 ;;
+		--no-stick) STICK=0; shift ;;
 		--memory) MEMORY="${2:?missing size}"; shift 2 ;;
 		-h|--help) usage; exit 0 ;;
 		--) shift; EXTRA=("$@"); break ;;
@@ -47,7 +55,11 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-[ -f "${IMAGE}" ] || die "${IMAGE} not found"
+if [ "${STICK}" = 1 ]; then
+	[ -f "${IMAGE}" ] || die "${IMAGE} not found"
+elif [ -z "${DISK}" ]; then
+	die "--no-stick needs --disk"
+fi
 command -v qemu-system-x86_64 > /dev/null || die "qemu-system-x86_64 not found (apt install qemu-system-x86)"
 
 # Sound goes to the host's PulseAudio/PipeWire when there is one.
@@ -67,11 +79,24 @@ else
 	echo "warning: /dev/kvm not usable, the VM will be slow" >&2
 fi
 
-case "${IMAGE}" in
-	*.iso) ARGS+=(-drive "if=none,id=stick,format=raw,readonly=on,file=${IMAGE}") ;;
-	*) ARGS+=(-drive "if=none,id=stick,format=raw,file=${IMAGE}") ;;
-esac
-ARGS+=(-device usb-storage,bus=xhci.0,drive=stick,bootindex=0)
+if [ "${STICK}" = 1 ]; then
+	case "${IMAGE}" in
+		*.iso) ARGS+=(-drive "if=none,id=stick,format=raw,readonly=on,file=${IMAGE}") ;;
+		*) ARGS+=(-drive "if=none,id=stick,format=raw,file=${IMAGE}") ;;
+	esac
+	ARGS+=(-device usb-storage,bus=xhci.0,drive=stick,bootindex=0)
+fi
+
+if [ -n "${DISK}" ]; then
+	if [ ! -e "${DISK}" ]; then
+		command -v qemu-img > /dev/null || die "qemu-img not found (apt install qemu-utils)"
+		qemu-img create -q -f qcow2 "${DISK}" 20G
+	fi
+	case "${DISK}" in
+		*.qcow2) ARGS+=(-drive "if=virtio,format=qcow2,file=${DISK}") ;;
+		*) ARGS+=(-drive "if=virtio,format=raw,file=${DISK}") ;;
+	esac
+fi
 
 if [ -n "${PERSISTENCE}" ]; then
 	[ -f "${PERSISTENCE}" ] || die "${PERSISTENCE} not found"

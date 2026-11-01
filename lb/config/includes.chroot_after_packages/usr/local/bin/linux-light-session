@@ -39,8 +39,11 @@ linux-light-status &
 	mark="$HOME/.config/linux-light/welcomed"
 	if [ ! -e "$mark" ]; then
 		mkdir -p "${mark%/*}" && touch "$mark"
-		notify-send -t 15000 "Welcome to Linux Light" \
-			"Super+F1 shows the keyboard shortcuts. Wi-Fi: network icon at the top right, or Super+n."
+		welcome="Super+F1 shows the keyboard shortcuts. Wi-Fi: network icon at the top right, or Super+n."
+		if [ -d /run/live/medium ]; then
+			welcome="$welcome To install Linux Light on this computer: Super+Shift+i."
+		fi
+		notify-send -t 15000 "Welcome to Linux Light" "$welcome"
 	fi
 
 	if [ -x "$HOME/.config/linux-light/autostart" ]; then

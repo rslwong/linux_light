@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="220" viewBox="0 0 640 220">
+  <g transform="translate(20,30) scale(0.625)">
+    <rect x="8" y="8" width="240" height="240" rx="48" fill="#005577"/>
+    <path d="M86 58 V182 H176" fill="none" stroke="#eeeeee" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="178" cy="78" r="20" fill="#f5c211"/>
+  </g>
+  <text x="210" y="112" font-family="DejaVu Sans" font-size="54" font-weight="bold" fill="#16202a">Linux Light</text>
+  <text x="212" y="152" font-family="DejaVu Sans" font-size="20" fill="#3b5566">Debian 13 · dwm · light and portable</text>
+</svg>

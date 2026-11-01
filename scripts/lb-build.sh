@@ -59,6 +59,48 @@ clean_tree() {
 	rm -rf auto config chroot binary .build ./*.iso ./*.packages ./*.contents ./*.files ./*.log
 }
 
+# Packages that the installer adds to an installed system (GRUB for UEFI or
+# BIOS, lb/pool/*.list) go into a package pool on the ISO, with their
+# dependencies, so installing needs no internet. live-build has this feature
+# (*.list.binary), but with --build-with-chroot false its chroot has no DNS
+# at that point. Runs after the squashfs is built, so the temporary
+# resolv.conf never reaches the image.
+build_pool() {
+	local list cache=/build/pool.cache dist="${DIST}"
+
+	echo "P: Building the package pool for the installer..."
+	rm -rf "${cache}" binary/pool binary/dists
+	mkdir -p "${cache}/archives/partial"
+	cp -a chroot/etc/resolv.conf chroot/etc/resolv.conf.lb-build
+	cp /etc/resolv.conf chroot/etc/resolv.conf
+	mount --bind "${cache}" chroot/mnt
+	for list in "${SRC}"/lb/pool/*.list; do
+		grep -v '^\s*#' "${list}" | xargs chroot chroot apt-get -q -y \
+			-o Dir::Cache=/mnt -o Dir::State::status=/dev/null \
+			-o Debug::NoLocking=true --download-only install
+	done
+	umount chroot/mnt
+	mv chroot/etc/resolv.conf.lb-build chroot/etc/resolv.conf
+
+	mkdir -p "binary/pool/main" "binary/dists/${dist}/main/binary-${ARCH:-amd64}"
+	mv "${cache}"/archives/*.deb binary/pool/main/
+	rm -rf "${cache}"
+	(
+		cd binary
+		apt-ftparchive packages pool/main > "dists/${dist}/main/binary-${ARCH:-amd64}/Packages"
+		gzip -9 -k "dists/${dist}/main/binary-${ARCH:-amd64}/Packages"
+		apt-ftparchive \
+			-o APT::FTPArchive::Release::Origin="Linux Light" \
+			-o APT::FTPArchive::Release::Suite="${dist}" \
+			-o APT::FTPArchive::Release::Codename="${dist}" \
+			-o APT::FTPArchive::Release::Architectures="${ARCH:-amd64}" \
+			-o APT::FTPArchive::Release::Components=main \
+			release "dists/${dist}" > /build/Release.tmp
+		mv /build/Release.tmp "dists/${dist}/Release"
+	)
+	echo "P: Package pool: $(ls binary/pool/main | wc -l) packages, $(du -sh binary/pool | cut -f1)"
+}
+
 # live-build's GRUB hybrid layout makes the ISO filesystem mountable only
 # from the whole disk. live-boot then never looks for a persistence partition
 # on the stick it booted from, since it skips the disk holding the live
@@ -105,7 +147,14 @@ run_stages() {
 	lb bootstrap
 	mount_dev
 	lb chroot
+	# Before making the squashfs, live-build copies its binary-stage package
+	# cache into chroot/var/cache/apt/archives, which with
+	# --build-with-chroot false is the image itself. Linux Light uses no
+	# such cache (see build_pool), so keep it empty.
+	rm -rf cache/packages.binary
+	rm -f chroot/var/cache/apt/archives/*.deb
 	lb binary
+	build_pool
 	umount_all
 	trap - EXIT
 	remaster_iso

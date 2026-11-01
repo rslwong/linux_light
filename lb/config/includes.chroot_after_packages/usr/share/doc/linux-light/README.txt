@@ -13,6 +13,7 @@ KEYBOARD (Super = the Windows key)
   Super+v               volume mixer (pavucontrol)
   Super+Shift+t         touchpad settings
   Super+Shift+p         screens: mirror / extend to an external screen
+  Super+Shift+i         install Linux Light on this computer (from the stick)
   Super+F1              this help
   Super+Shift+l         lock the screen
   Super+Shift+e         power menu: lock, suspend, reboot, power off
@@ -109,12 +110,26 @@ TOUCHPAD
   once and, with persistence, are kept for the next boot. "Reset to
   defaults" brings back the settings listed above.
 
+INSTALLING LINUX LIGHT ON A DISK
+--------------------------------
+  From the USB stick or ISO, press Super+Shift+i. The installer asks for
+  language, time zone, keyboard, the disk to use (erase it, install
+  alongside Windows or another system, or pick partitions yourself;
+  optionally encrypted) and your user name and password. It installs this
+  same desktop and software, without the live-system parts; changes made
+  on the stick (persistence) are not copied, saved Wi-Fi networks are.
+  Afterwards the computer starts with a login screen. Back up anything
+  important first: erasing a disk cannot be undone. In the computer's
+  boot menu (F12, F9, Esc, ... at power-on) the installed system is
+  called "linux" (or "debian"); Secure Boot can stay on.
+
 INSTALLING SOFTWARE
 -------------------
   sudo apt update
   sudo apt install <package>
-  The kernel is held back on purpose (it is booted from the ISO image);
-  rebuild the ISO to get a newer one.
+  On the stick, the kernel is held back on purpose (it is booted from the
+  ISO image); rebuild the ISO to get a newer one. An installed system
+  updates its kernel normally with  sudo apt upgrade.
 
   After moving to a newer Linux Light image, if you had installed
   packages: apt does not know yet about packages the new image added

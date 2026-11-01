@@ -1,0 +1,4 @@
+# GRUB for installing on legacy BIOS machines. Downloaded with its
+# dependencies into the package pool on the ISO (build_pool in
+# scripts/lb-build.sh), where the installer finds it without internet.
+grub-pc

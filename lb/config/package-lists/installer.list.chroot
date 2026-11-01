@@ -1,0 +1,21 @@
+# Installer: Calamares with Debian's live-system settings, which Linux Light
+# overrides in /etc/calamares (branding, steps, packages to remove).
+calamares
+calamares-settings-debian
+
+# Recommended by Calamares and its password check, so needed with
+# --apt-recommends false: unsquashfs copies the system, cracklib's dictionary
+# lets passwords pass the check at all, and the QtQuick modules draw the
+# slideshow shown during the install.
+squashfs-tools
+cracklib-runtime
+qml6-module-qtquick
+qml6-module-qtquick-window
+
+# Used by the installer on the target system: encrypted installs, dual boot
+# detection, UEFI boot entries, setting the hardware clock (hwclock).
+cryptsetup-initramfs
+keyutils
+os-prober
+efibootmgr
+util-linux-extra

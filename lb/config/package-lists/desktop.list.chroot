@@ -1,3 +1,8 @@
+# Login screen (LightDM). The live system logs in automatically; installed
+# systems ask for the password unless auto-login was chosen in the installer.
+lightdm
+lightdm-gtk-greeter
+
 # X11 (dwm itself is compiled from /usr/local/src/dwm by a chroot hook)
 xserver-xorg
 xserver-xorg-core

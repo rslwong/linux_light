@@ -3,7 +3,8 @@
 A portable, lightweight Linux desktop on a USB stick. It's a Debian 13 (trixie)
 live system with the **dwm** window manager, **persistent storage** and as
 much Wi-Fi, network, Bluetooth and sound hardware support as Debian offers.
-Write it to a dedicated stick or drop it onto a **Ventoy** stick.
+Write it to a dedicated stick or drop it onto a **Ventoy** stick, and
+**install it** on a laptop's SSD like any other distribution.
 
 | | |
 |---|---|
@@ -19,9 +20,11 @@ Write it to a dedicated stick or drop it onto a **Ventoy** stick.
 | Packages | `apt` with the full Debian archive (main, contrib, non-free, non-free-firmware) and security updates |
 | Boot | BIOS and UEFI, including Secure Boot (Debian's signed shim, GRUB and kernel) |
 | Persistence | partition or Ventoy file labelled `persistence`, 32 GB by default, size configurable |
+| Installer | Calamares (Super+Shift+i on the stick): erase a disk, install alongside Windows, manual partitions, optional encryption; works offline |
+| Login | live system: automatic; installed system: LightDM login screen, optional auto-login |
 
-Login is automatic. The user is `user`, the password is `live`, and `sudo`
-works without a password.
+On the stick, login is automatic: the user is `user`, the password is `live`,
+and `sudo` works without a password.
 
 ## 1. Build the ISO
 
@@ -198,9 +201,10 @@ scrolling or "ignore the touchpad while typing". Changes apply immediately
 and are kept with persistence.
 
 **Software.** `sudo apt update && sudo apt install <package>`. With
-persistence, installed packages survive reboots. The kernel package is held
-on purpose because the kernel is always booted from the ISO. Rebuild the ISO
-to update it.
+persistence, installed packages survive reboots. On the stick the kernel
+package is held on purpose, because the kernel is always booted from the
+ISO; rebuild the ISO to update it. An installed system updates its kernel
+normally.
 
 **Keys** (Super is the Windows key; **Super+F1** shows the full list):
 
@@ -212,6 +216,7 @@ to update it.
 | Super+n / Super+v | network setup (nmtui) / volume mixer |
 | Super+Shift+t | touchpad settings |
 | Super+Shift+p | screens: extend / mirror / external only / laptop only |
+| Super+Shift+i | install Linux Light on this computer (on the stick) |
 | Super+Shift+c | close window |
 | Super+j / Super+k | focus next / previous window |
 | Super+1…9, Super+Shift+1…9 | switch to / move window to workspace |
@@ -223,6 +228,40 @@ to update it.
 To check whether persistence is active, run `grep persistence /proc/mounts`
 in a terminal. It lists the persistence partition (or Ventoy file) when one is
 in use.
+
+## 4. Installing on a disk (SSD)
+
+Boot the stick (or the ISO in a VM) and press **Super+Shift+i**; the welcome
+notification on the stick mentions it too. The installer (Calamares, as on
+Debian's own live images) asks for:
+
+1. language and time zone,
+2. keyboard layout,
+3. the disk: erase a whole disk, install alongside Windows or another
+   system (it shrinks a partition to make room), replace a partition, or
+   partition by hand; any of them can be encrypted,
+4. your name, user name, computer name and password, and whether to log in
+   automatically.
+
+It then copies the same system that runs on the stick, without the
+live-system parts (live-boot, live-config) and without the installer itself,
+installs GRUB for UEFI (with Secure Boot support) or legacy BIOS, and asks to
+restart. The installed system starts with a LightDM login screen, has the
+same desktop, keys and tools, and gets kernel updates with
+`sudo apt upgrade`. Its apt sources are Linux Light's (main, contrib,
+non-free, non-free-firmware).
+
+Notes:
+
+- No internet is needed: the GRUB packages the installer adds come from a
+  small package pool on the ISO.
+- What the installer copies is the clean image. Changes made on the stick
+  (persistence) are not copied, except saved Wi-Fi networks.
+- Erasing a disk cannot be undone; back up first. To dual boot with Windows,
+  turn off BitLocker and Fast Startup in Windows beforehand.
+- In the computer's own boot menu (F12, F9, Esc, ... at power-on) the
+  installed system is listed as "linux" (or "debian" if the firmware had to
+  recreate the entry). Secure Boot can stay on.
 
 ## Customizing
 
@@ -236,6 +275,8 @@ in use.
 | Screen switching and hotplug | `.../usr/local/bin/linux-light-display` |
 | Touchpad defaults / settings menu | `.../etc/X11/xorg.conf.d/40-linux-light-touchpad.conf`, `.../usr/local/bin/linux-light-touchpad` |
 | Patched Debian packages | `packages/<source package>/*.patch` |
+| Installer steps, branding, packages removed after install | `.../etc/calamares/` (based on Debian's `calamares-settings-debian`) |
+| Login screen | `.../etc/lightdm/lightdm.conf.d/`, `.../usr/share/lightdm/lightdm-gtk-greeter.conf.d/` |
 | Build-time scripts | `lb/config/hooks/normal/*.hook.chroot` |
 | live-build options | `lb/auto/config` |
 
@@ -292,6 +333,8 @@ tools/test-vm.sh --secure-boot                     # UEFI with Secure Boot enfor
 tools/make-ventoy-persistence.sh -s 4G -o /tmp/p.dat
 tools/test-vm.sh --persistence /tmp/p.dat          # with persistence
 tools/make-usb.sh -y -s 4G /tmp/usb.img && tools/test-vm.sh /tmp/usb.img
+tools/test-vm.sh --disk /tmp/ssd.qcow2              # try the installer on an empty 20 GB disk
+tools/test-vm.sh --no-stick --disk /tmp/ssd.qcow2   # then boot the installed system
 ```
 
 ### Automated tests
@@ -314,6 +357,7 @@ scripts/build-packages.sh rebuilds the Debian packages in packages/ with their p
 packages/                 local patches to Debian packages (3-finger drag)
 lb/auto/config            live-build configuration
 lb/config/                package lists, hooks, boot menu, files for the image
+lb/pool/                  packages the installer adds to an installed system (GRUB)
 tools/make-usb.sh         write a stick with a persistence partition
 tools/make-ventoy-persistence.sh   persistence file for Ventoy
 tools/test-vm.sh          boot the image in QEMU
@@ -341,5 +385,28 @@ tests/                    automated tests for the screen and touchpad scripts
   `libinput 3-Finger Drag Enabled` (0, 3 or 4 fingers). The rebuilt package
   is versioned `+linuxlight1`, so apt keeps it unless Debian ships a newer
   upstream version.
+- The installer configuration is Debian's (`calamares-settings-debian`)
+  with these changes: Linux Light branding; Linux Light's apt sources
+  instead of Debian's defaults; a swap choice (none, small, suspend, file;
+  default small: as much as RAM, at most 8 GB and 10% of the disk); and a
+  last step, `/usr/local/sbin/linux-light-finish-install`, that lifts the
+  live system's kernel hold, removes the installer and sets up the boot
+  loader for later GRUB updates (below).
+- The GRUB packages for the target (`lb/pool/*.list`) go into a package
+  pool on the ISO, which `scripts/lb-build.sh` builds after live-build
+  (live-build's own `*.list.binary` needs DNS inside the chroot, which it
+  does not have at that stage).
+- UEFI installs put shim and GRUB in `EFI/linux` (named after the first word
+  of GRUB_DISTRIBUTOR, which is where Debian's GRUB updates reinstall to)
+  and in the removable-media path `EFI/BOOT`, so the disk still boots with
+  Secure Boot if the firmware loses its boot entry. Debian's signed GRUB
+  reads `EFI/debian/grub.cfg` first, so a copy of the small redirect file
+  goes there unless another Debian already has one. BIOS installs record
+  the disk for grub-pc's updates.
+- Persistence stores made with an older image keep that image's
+  `/etc/passwd`. Packages that create system users in their install scripts
+  (Avahi, LightDM) are therefore also declared in
+  `/usr/lib/sysusers.d/linux-light.conf`, and systemd-sysusers runs on every
+  boot to add missing users.
 - Firmware for old Broadcom b43 Wi-Fi cards is not redistributable; Debian's
   `firmware-b43-installer` downloads it (checksum-verified) during the build.

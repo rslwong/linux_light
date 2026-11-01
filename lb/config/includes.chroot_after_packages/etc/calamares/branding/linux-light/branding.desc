@@ -1,0 +1,42 @@
+# Calamares branding for Linux Light (logo.svg and welcome.svg are the
+# sources of the PNGs).
+---
+componentName:  linux-light
+
+welcomeStyleCalamares:  true
+welcomeExpandingLogo:   true
+windowExpanding:        normal
+windowSize:             800px,580px
+windowPlacement:        center
+
+strings:
+    productName:         Linux Light
+    shortProductName:    Linux Light
+    version:             13
+    shortVersion:        13
+    versionedName:       Linux Light (Debian 13)
+    shortVersionedName:  Linux Light
+    # Becomes GRUB_DISTRIBUTOR (the boot menu title); its first word, lowercased,
+    # is the EFI directory that GRUB updates install to. Keep it in step with
+    # efiBootloaderId in modules/bootloader.conf.
+    bootloaderEntryName: Linux Light
+    productUrl:          https://github.com/rslwong/linux_light
+    supportUrl:          https://github.com/rslwong/linux_light/issues
+    knownIssuesUrl:      https://github.com/rslwong/linux_light/issues
+
+sidebar:    widget
+navigation: widget
+
+images:
+    productLogo:    "logo.png"
+    productIcon:    "logo.png"
+    productWelcome: "welcome.png"
+
+slideshow:      "show.qml"
+slideshowAPI:   2
+
+style:
+    SidebarBackground:          "#16202a"
+    SidebarText:                "#eeeeee"
+    SidebarTextCurrent:         "#ffffff"
+    SidebarBackgroundCurrent:   "#005577"
